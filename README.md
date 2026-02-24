@@ -3,13 +3,29 @@
 A Python script that displays live system metrics on an [iDotMatrix 64×64 pixel display](https://www.amazon.com/iDotMatrix-Programmable-Creative-Animations-Accessories/dp/B0DKP2CTP6) via Bluetooth, reading data directly from a local [Grafana Alloy](https://grafana.com/docs/alloy/latest/) instance.
 
 ```
-┌────────────────────────────────────────────┐
-│ CPU                                    58% │
-│ RAM                                     5% │
-│ /                                      85G │
-│ ─────────────────────────────────────────  │
-│     CPU sparkline (rolling history)        │
-└────────────────────────────────────────────┘
+# without time and date - use the metrics_dashboard.py script
+┌─────────────────────────────┐
+│ CPU  [████░░░░░░░░░] 12 %   │
+│ RAM  [█░░░░░░░░░░░░]  5 %   │
+│ /    [████████████░] 85 G   │
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+└─────────────────────────────┘
+
+# with time and date -  use the metrics_dashboard_with_timestamp.py script
+# TIMEZONE = "Europe/Bucharest" is hardcoded in the constants .
+# Created this version only because my daughter was bugging me that she wants
+# to see the time there 😁
+┌─────────────────────────────┐
+│ 20:15              24/02    │  ← warm yellow time, muted date
+│─────────────────────────────│
+│ CPU  [████░░░░░░░░░] 12 %   │
+│ RAM  [█░░░░░░░░░░░░]  5 %   │
+│ /    [████████████░] 85 G   │
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+└─────────────────────────────┘
+
 ```
 
 Bar colors shift green → yellow → orange → red as usage climbs. The bottom panel shows a rolling CPU sparkline across the last 50 samples.
