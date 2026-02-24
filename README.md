@@ -213,7 +213,7 @@ sudo systemctl status idotmatrix
 
 ---
 
-***Some actual images ***
+***Some actual images***
 
 ![3](https://github.com/user-attachments/assets/92a1f9cf-375d-4336-900d-f1719eae3e1c)
 ![2](https://github.com/user-attachments/assets/70e8a4e6-37a4-4b61-92b5-f648ad3a6137)
