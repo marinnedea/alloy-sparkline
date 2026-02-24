@@ -188,13 +188,15 @@ Create `/etc/systemd/system/idotmatrix.service`:
 [Unit]
 Description=iDotMatrix metrics dashboard
 After=network.target bluetooth.target
+Wants=bluetooth.target
 
 [Service]
-User=YOUR_USERNAME
-WorkingDirectory=/path/to/idotmatrix-api-client
-ExecStart=/path/to/idotmatrix-api-client/venv/bin/python3 metrics_dashboard.py --mac AA:BB:CC:DD:EE:FF --interval 30
+User=YOUR_USER_HERE
+WorkingDirectory=/PATH/TO/idotmatrix-api-client
+ExecStartPre=/bin/sleep 15
+ExecStart=/PATH/TO/idotmatrix-api-client/venv/bin/python3 metrics_dashboard.py
 Restart=on-failure
-RestartSec=15
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
