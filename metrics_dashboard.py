@@ -224,12 +224,9 @@ def draw_bar_row(draw: ImageDraw.ImageDraw, font,
     # Track (full width background)
     draw.rectangle([(1, y), (W - 2, y + BAR_H - 1)], fill=TRACK)
 
-    # Filled bar
+    # Filled bar — use full color, text zones will be darkened separately
     if filled > 0:
-        dark = tuple(max(0, c - 70) for c in color)
-        draw.rectangle([(1, y), (1 + filled - 1, y + BAR_H - 1)], fill=dark)
-        # Bright 2px bottom strip as indicator line
-        draw.rectangle([(1, y + BAR_H - 2), (1 + filled - 1, y + BAR_H - 1)], fill=color)
+        draw.rectangle([(1, y), (1 + filled - 1, y + BAR_H - 1)], fill=color)
 
     # Dark "label zone" on left so text is always readable regardless of fill
     draw.rectangle([(1, y), (22, y + BAR_H - 1)], fill=(20, 20, 40))
@@ -276,9 +273,9 @@ def render_frame(m: dict, cpu_history: deque) -> Image.Image:
     fs_label = "/" if mp == "/" else (mp.split("/")[-1] or "fs")[:3].upper()
 
     rows = [
-        ("CPU", m["cpu"],     f"{m['cpu']:.0f}%"),
-        ("RAM", m["ram_pct"], f"{m['ram_pct']:.0f}%"),
-        (fs_label, m["fs_pct"], f"{m['fs_avail']:.0f}G"),
+        ("CPU", m["cpu"],     f"{m['cpu']:.0f} %"),
+        ("RAM", m["ram_pct"], f"{m['ram_pct']:.0f} %"),
+        (fs_label, m["fs_pct"], f"{m['fs_avail']:.0f} G"),
     ]
     for i, (label, pct, right) in enumerate(rows):
         draw_bar_row(draw, font, 1 + i * (BAR_H + GAP), label, pct, right)
