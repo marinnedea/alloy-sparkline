@@ -16,6 +16,20 @@ Bar colors shift green → yellow → orange → red as usage climbs. The bottom
 
 ---
 
+## How it works
+
+Grafana Alloy bundles a full Prometheus node exporter (`prometheus.exporter.unix`) and exposes each component's metrics at a local HTTP endpoint. The script:
+
+1. Fetches the raw Prometheus text exposition format from Alloy on each cycle
+2. Parses `node_cpu_seconds_total`, `node_memory_*`, and `node_filesystem_*` metrics
+3. Computes CPU % as a delta between two consecutive scrapes (same method as `rate()` in PromQL)
+4. Renders a 64×64 PNG using Pillow with color-coded bars and a rolling sparkline
+5. Pushes the image to the display over BLE using the iDotMatrix library
+
+No Prometheus server, no psutil, no additional exporters needed — just Alloy.
+
+---
+
 ## Requirements
 
 ### Hardware
@@ -38,7 +52,7 @@ git clone https://github.com/markusressel/idotmatrix-api-client.git
 cd idotmatrix-api-client
 ```
 
-> **Note:** This script was built and tested against the `markusressel/idotmatrix-api-client` fork, which is the actively maintained version with 64×64 support. It uses the internal module imports (`idotmatrix.client`, `idotmatrix.screensize`) from this specific fork.
+**Note:** This script was built and tested against the [markusressel/idotmatrix-api-client](https://github.com/markusressel/idotmatrix-api-client) fork, which is the actively maintained version with 64×64 support. It uses the internal module imports (`idotmatrix.client`, `idotmatrix.screensize`) from this specific fork.
 
 ### 2. Create a virtual environment and install dependencies
 
@@ -62,7 +76,10 @@ Or just place it in the same directory as the cloned repo.
 
 ## Grafana Alloy setup
 
-The script reads from Alloy's local component API on port `12345`. Your `config.alloy` must have the Linux integration (node exporter) enabled. The confirmed working endpoint is:
+The script reads from Alloy's local component API on port `12345` - see how-to [here](https://grafana.com/docs/alloy/latest/configure/linux/#pass-additional-command-line-flags). Your `config.alloy` must have the Linux integration (node exporter) enabled.
+Please note I haven't tested yet on Windows or MacOS, so not sure what would be the right equivalent for those. Will update once I have more details.
+
+The confirmed working endpoint is:
 
 ```
 http://localhost:12345/api/v0/component/prometheus.exporter.unix.integrations_node_exporter/metrics
@@ -88,7 +105,7 @@ curl -s http://localhost:12345/api/v0/component/prometheus.exporter.unix.integra
 # Expected output: node_memory_MemTotal_bytes 3.3412841472e+10
 ```
 
-> If your Alloy label is different from `integrations_node_exporter`, update the `ALLOY_METRICS_URL` constant at the top of `metrics_dashboard.py`.
+If your Alloy label is different from `integrations_node_exporter`, update the `ALLOY_METRICS_URL` constant at the top of `metrics_dashboard.py`.
 
 ---
 
@@ -108,6 +125,7 @@ sudo usermod -aG bluetooth $USER
 bluetoothctl --timeout 15 scan on
 ```
 
+# Important!
 > The display must not be connected to any other device (e.g. your phone) when you run the script. BLE only allows one connection at a time.
 
 ---
@@ -195,14 +213,3 @@ sudo systemctl status idotmatrix
 
 ---
 
-## How it works
-
-Grafana Alloy bundles a full Prometheus node exporter (`prometheus.exporter.unix`) and exposes each component's metrics at a local HTTP endpoint. The script:
-
-1. Fetches the raw Prometheus text exposition format from Alloy on each cycle
-2. Parses `node_cpu_seconds_total`, `node_memory_*`, and `node_filesystem_*` metrics
-3. Computes CPU % as a delta between two consecutive scrapes (same method as `rate()` in PromQL)
-4. Renders a 64×64 PNG using Pillow with color-coded bars and a rolling sparkline
-5. Pushes the image to the display over BLE using the iDotMatrix library
-
-No Prometheus server, no psutil, no additional exporters needed — just Alloy.
