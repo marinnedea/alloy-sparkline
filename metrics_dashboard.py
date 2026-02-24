@@ -331,7 +331,12 @@ async def run(args):
               f"{m['fs_mount']} free={m['fs_avail']:.1f}G ({m['fs_pct']:.0f}% used)")
 
         if args.mode == "text":
-            await client.text.display_text(render_text(m))
+            await client.text.show_text(
+                render_text(m),
+                font_size=8,
+                speed=60,
+                text_color=(220, 220, 220),
+            )
         else:
             img = render_frame(m, cpu_history)
             img.save(tmp)
