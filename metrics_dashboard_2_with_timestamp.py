@@ -9,13 +9,17 @@ Alloy endpoint (confirmed working):
     prometheus.exporter.unix.integrations_node_exporter/metrics
 
 Display layout (64x64):
-  ┌──────────────────────────────────────────┐
-  │ CPU  [████████████░░░░░░░░░] 58%         │
-  │ RAM  [████░░░░░░░░░░░░░░░░░]  5% (2/32G) │
-  │ ROOT [████████████████░░░░░] 82% (80G fr)│
-  │ ─────────────────────────────────────────│
-  │ CPU sparkline (rolling 50 samples)        │
-  └──────────────────────────────────────────┘
+┌─────────────────────────────┐
+│ 20:15              24/02    │  ← warm yellow time, muted date
+│─────────────────────────────│
+│ CPU  [████░░░░░░░░░] 12 %   │
+│ RAM  [█░░░░░░░░░░░░]  5 %   │
+│ /    [████████████░] 85 G   │
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← CPU sparkline
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← RAM sparkline
+└─────────────────────────────┘
 
 Usage:
   pip install idotmatrix-api-client pillow requests
