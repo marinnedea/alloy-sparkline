@@ -23,7 +23,7 @@ A Python script that displays live system metrics on an [iDotMatrix 64×64 pixel
 │ RAM  [█░░░░░░░░░░░░]  5 %   │
 │ /    [████████████░] 85 G   │
 │─────────────────────────────│
-│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+│ ╱╲___╱╲___/‾‾╲__           │  ← CPU sparkline
 └─────────────────────────────┘
 
 
@@ -37,9 +37,9 @@ A Python script that displays live system metrics on an [iDotMatrix 64×64 pixel
 │ RAM  [█░░░░░░░░░░░░]  5 %   │
 │ /    [████████████░] 85 G   │
 │─────────────────────────────│
-│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+│ ╱╲___╱╲___/‾‾╲__           │  ← CPU sparkline
 │─────────────────────────────│
-│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+│ ╱╲___╱╲___/‾‾╲__           │  ← RAM sparkline
 └─────────────────────────────┘
 
 ```
