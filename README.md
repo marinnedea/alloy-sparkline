@@ -13,7 +13,7 @@ A Python script that displays live system metrics on an [iDotMatrix 64×64 pixel
 └─────────────────────────────┘
 
 # with time and date -  use the metrics_dashboard_with_timestamp.py script
-# TIMEZONE = "Europe/Bucharest" is hardcoded in the constants .
+# TIMEZONE = "Europe/Bucharest" is hardcoded in the constants - change it to your own timezone.
 # Created this version only because my daughter was bugging me that she wants
 # to see the time there 😁
 ┌─────────────────────────────┐
@@ -22,6 +22,22 @@ A Python script that displays live system metrics on an [iDotMatrix 64×64 pixel
 │ CPU  [████░░░░░░░░░] 12 %   │
 │ RAM  [█░░░░░░░░░░░░]  5 %   │
 │ /    [████████████░] 85 G   │
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
+└─────────────────────────────┘
+
+
+# Double Sparkline with time and date -  use the metrics_dashboard_2_with_timestamp.py script
+# TIMEZONE = "Europe/Bucharest" is hardcoded in the constants - change it to your own timezone.
+
+┌─────────────────────────────┐
+│ 20:15              24/02    │  ← warm yellow time, muted date
+│─────────────────────────────│
+│ CPU  [████░░░░░░░░░] 12 %   │
+│ RAM  [█░░░░░░░░░░░░]  5 %   │
+│ /    [████████████░] 85 G   │
+│─────────────────────────────│
+│ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
 │─────────────────────────────│
 │ ╱╲___╱╲___/‾‾╲__           │  ← sparkline
 └─────────────────────────────┘
