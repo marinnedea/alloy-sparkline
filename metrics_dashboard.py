@@ -559,15 +559,75 @@ class FrameState:
 # BLE MANAGEMENT
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Errors that mean the HCI adapter is stuck (not just the device being absent)
+_BLE_STUCK_ERRORS = (
+    "No discovery started",      # BlueZ: adapter not in scanning state
+    "org.bluez.Error.NotReady",  # adapter powered off / not initialised
+    "org.bluez.Error.Failed",    # generic BlueZ failure (also covers stuck state)
+)
+
+# After this many consecutive "device not found" failures also try an adapter reset
+_BLE_RESET_AFTER = 3
+
+
+async def _reset_bt_adapter() -> None:
+    """
+    Power-cycle the Bluetooth adapter to clear a dirty/stuck state left
+    behind by a previously SIGKILL'd process.
+
+    Strategy (in order):
+      1. bluetoothctl power off → on  (works when user is in 'bluetooth' group)
+      2. hciconfig hci0 down → up     (fallback; may need passwordless sudo)
+
+    After each method we wait a couple of seconds for BlueZ to settle.
+    """
+    import subprocess
+    loop = asyncio.get_event_loop()
+
+    def _run(cmd: list[str]) -> int:
+        r = subprocess.run(cmd, capture_output=True, timeout=10)
+        return r.returncode
+
+    print("[BLE] Adapter reset: trying bluetoothctl…")
+    try:
+        await loop.run_in_executor(None, _run, ["bluetoothctl", "--timeout", "3", "power", "off"])
+        await asyncio.sleep(1)
+        await loop.run_in_executor(None, _run, ["bluetoothctl", "--timeout", "3", "power", "on"])
+        await asyncio.sleep(2)
+        print("[BLE] Adapter reset via bluetoothctl — OK")
+        return
+    except Exception as exc:
+        print(f"[BLE] bluetoothctl reset failed: {exc}")
+
+    print("[BLE] Adapter reset: trying hciconfig…")
+    try:
+        await loop.run_in_executor(None, _run, ["sudo", "hciconfig", "hci0", "down"])
+        await asyncio.sleep(1)
+        await loop.run_in_executor(None, _run, ["sudo", "hciconfig", "hci0", "up"])
+        await asyncio.sleep(2)
+        print("[BLE] Adapter reset via hciconfig — OK")
+        return
+    except Exception as exc:
+        print(f"[BLE] hciconfig reset also failed: {exc} — will keep retrying normally")
+
+
 async def connect_with_retry(client: IDotMatrixClient, mac: str | None) -> None:
     """
     Try to connect the BLE client indefinitely with 15-second back-off.
-    A BleakScanner.discover() pass runs before each connect attempt because
-    bleak sometimes fails to find the device without a prior scan.
+
+    Self-healing behaviour:
+      • If BlueZ reports a stuck-adapter error (e.g. "No discovery started")
+        → reset the adapter immediately, then retry without the normal delay
+      • If N consecutive "device not found" failures occur
+        → reset the adapter as a precaution (device may have been off; adapter
+           may have been dirtied by a previous crash)
+
     Never raises — always returns once connected.
     """
-    delay   = 15
-    attempt = 0
+    delay              = 15
+    attempt            = 0
+    consecutive_misses = 0   # "device not found" counter (reset on adapter reset)
+
     while True:
         attempt += 1
         try:
@@ -578,8 +638,25 @@ async def connect_with_retry(client: IDotMatrixClient, mac: str | None) -> None:
             await client.connect()
             print("[BLE] Connected!")
             return
+
         except Exception as exc:
+            err = str(exc)
             print(f"[BLE] Connection failed (attempt {attempt}): {exc}")
+
+            if any(s in err for s in _BLE_STUCK_ERRORS):
+                # Adapter is definitely stuck — reset now, no point waiting
+                print("[BLE] Adapter appears stuck — resetting…")
+                await _reset_bt_adapter()
+                consecutive_misses = 0
+                continue   # skip the normal delay
+
+            consecutive_misses += 1
+            if consecutive_misses >= _BLE_RESET_AFTER:
+                print(f"[BLE] {consecutive_misses} consecutive misses — resetting adapter as precaution…")
+                await _reset_bt_adapter()
+                consecutive_misses = 0
+                continue   # skip the normal delay
+
             print(f"[BLE] Retrying in {delay}s…")
             await asyncio.sleep(delay)
 
