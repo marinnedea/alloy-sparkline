@@ -543,6 +543,17 @@ class FrameState:
         self._fs       = m["fs_pct"]
         self._time_str = time_str
 
+    def reset(self) -> None:
+        """
+        Reset to sentinel values so the next cycle unconditionally uploads.
+        Call this whenever the BLE connection is (re-)established — the
+        display may have been power-cycled and its screen cleared.
+        """
+        self._cpu      = -999.0
+        self._ram      = -999.0
+        self._fs       = -999.0
+        self._time_str = ""
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BLE MANAGEMENT
@@ -634,10 +645,6 @@ async def run(args: argparse.Namespace) -> None:
         await client.set_brightness(args.brightness)
         await client.image.set_mode(1)   # DIY image mode — avoids flash on updates
 
-    print("Connecting to iDotMatrix 64x64…")
-    client = make_client()
-    await init_client(client)
-
     cpu_history: deque = deque(maxlen=50)
     ram_history: deque = deque(maxlen=50)
     state = FrameState(
@@ -645,6 +652,17 @@ async def run(args: argparse.Namespace) -> None:
         threshold_ram=args.threshold_ram,
         threshold_fs=args.threshold_fs,
     )
+
+    async def connect_and_reset(client: IDotMatrixClient) -> None:
+        """Connect (with retry) then reset FrameState so the display gets
+        a fresh frame immediately — covers both first start and device power-cycles."""
+        await init_client(client)
+        state.reset()
+        print("[BLE] FrameState reset — will upload on next cycle")
+
+    print("Connecting to iDotMatrix 64x64…")
+    client = make_client()
+    await connect_and_reset(client)
 
     # First scrape seeds the CPU delta baseline; reported value will be ~0
     fetch_metrics(args.alloy_url, args.fs)
@@ -702,7 +720,7 @@ async def run(args: argparse.Namespace) -> None:
             except Exception:
                 pass
             client = make_client()
-            await init_client(client)
+            await connect_and_reset(client)
 
         await asyncio.sleep(args.interval)
 
