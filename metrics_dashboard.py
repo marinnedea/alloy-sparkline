@@ -77,7 +77,7 @@ except ImportError:
 # CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-DEFAULT_ALLOY_URL = (
+DEFAULT_ALLOY_URL   = (
     "http://localhost:12345/api/v0/component/"
     "prometheus.exporter.unix.integrations_node_exporter/metrics"
 )
@@ -87,10 +87,7 @@ DEFAULT_INTERVAL    = 10
 DEFAULT_TIMEZONE    = "Europe/Bucharest"
 DEFAULT_FS          = "/"
 DEFAULT_MAC         = None
-
-# LED panel gamma. Values > 1.0 brighten midtones, compensating for the linear
-# LED response looking darker than expected (typical value: 1.8–2.2).
-DISPLAY_GAMMA = 2.2
+DEFAULT_GAMMA       = 2.2   # LED panel gamma (1.0=linear, 2.2=typical)
 
 # Sparkline supersample factor — drawn at (W*S × H*S) then downscaled.
 # Higher = smoother curves; 4 is a good balance of quality vs. speed.
@@ -134,11 +131,23 @@ def bar_color(pct: float) -> tuple:
     return RED
 
 
-# ── Gamma LUT (built once at import time) ────────────────────────────────────
+# ── Gamma LUT — rebuilt when gamma value changes ─────────────────────────────
+_current_gamma: float = DEFAULT_GAMMA
 _GAMMA_LUT = np.array(
-    [int((i / 255.0) ** (1.0 / DISPLAY_GAMMA) * 255 + 0.5) for i in range(256)],
+    [int((i / 255.0) ** (1.0 / _current_gamma) * 255 + 0.5) for i in range(256)],
     dtype=np.uint8,
 )
+
+
+def _set_gamma(gamma: float) -> None:
+    """Rebuild the gamma LUT for a new gamma value."""
+    global _current_gamma, _GAMMA_LUT
+    if gamma != _current_gamma:
+        _current_gamma = gamma
+        _GAMMA_LUT = np.array(
+            [int((i / 255.0) ** (1.0 / gamma) * 255 + 0.5) for i in range(256)],
+            dtype=np.uint8,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -566,6 +575,7 @@ async def run(args: argparse.Namespace) -> None:
             "  Or run with --render-test to preview rendering without BLE."
         )
 
+    _set_gamma(args.gamma)
     tmp = "/tmp/idotmatrix_metrics.png"
 
     def make_client() -> IDotMatrixClient:
@@ -740,6 +750,14 @@ def main() -> None:
         "--no-health-server", action="store_true",
         help="Disable the health HTTP server.",
     )
+    p.add_argument(
+        "--gamma", default=DEFAULT_GAMMA, type=float,
+        metavar="FLOAT",
+        help=(
+            "LED panel gamma correction (default: 2.2). "
+            "Higher values brighten midtones; 1.0 disables correction."
+        ),
+    )
     # ── Render-test mode ──────────────────────────────────────────────────────
     p.add_argument(
         "--render-test", action="store_true",
@@ -762,6 +780,7 @@ def main() -> None:
 
     # ── Render-test short-circuit ─────────────────────────────────────────────
     if args.render_test:
+        _set_gamma(args.gamma)
         render_test(args.render_out, args.render_scale, args.timezone)
         return
 
