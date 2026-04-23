@@ -48,14 +48,12 @@ Usage
 # ── Standard library ─────────────────────────────────────────────────────────
 import asyncio
 import argparse
-import hashlib
 import http.server
 import re
 import threading
 import time
 from collections import deque
 from datetime import datetime
-from io import BytesIO
 
 # ── Third-party ──────────────────────────────────────────────────────────────
 import numpy as np
@@ -88,6 +86,13 @@ DEFAULT_TIMEZONE    = "Europe/Bucharest"
 DEFAULT_FS          = "/"
 DEFAULT_MAC         = None
 DEFAULT_GAMMA       = 2.2   # LED panel gamma (1.0=linear, 2.2=typical)
+
+# ── Upload thresholds — how much a value must change to trigger a re-render ──
+# Keeps the BLE radio quiet on idle machines; sparkline still collects data
+# every cycle so history is always accurate when an upload does happen.
+THRESHOLD_CPU  = 1.0   # CPU % points
+THRESHOLD_RAM  = 0.5   # RAM % points
+THRESHOLD_FS   = 1.0   # filesystem % points
 
 # Sparkline supersample factor — drawn at (W*S × H*S) then downscaled.
 # Higher = smoother curves; 4 is a good balance of quality vs. speed.
@@ -479,24 +484,64 @@ def render_text(m: dict) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FRAME DEDUPLICATION
+# SMART UPLOAD — threshold-based dirty tracking
 # ══════════════════════════════════════════════════════════════════════════════
 
-_last_frame_hash: str = ""
-
-
-def frame_changed(img: Image.Image) -> bool:
+class FrameState:
     """
-    Return True when the frame differs from the last uploaded frame.
-    Uses a SHA-256 digest of raw pixel bytes — fast and collision-free
-    for our purposes.
+    Tracks the last-uploaded metric values and time string.
+    An upload is triggered only when at least one value crosses its threshold,
+    or when the clock minute rolls over.
+
+    This means:
+      • Metrics are still scraped every --interval seconds (sparkline stays accurate)
+      • render_frame() + BLE upload only happen when something visually meaningful changed
+      • On an idle machine the display may go several minutes without an upload
+
+    Thresholds (from module constants, all overridable via CLI):
+      CPU  ≥ THRESHOLD_CPU  %
+      RAM  ≥ THRESHOLD_RAM  %
+      FS   ≥ THRESHOLD_FS   %
+      time string changes   (HH:MM — once per minute)
     """
-    global _last_frame_hash
-    digest = hashlib.sha256(img.tobytes()).hexdigest()
-    if digest == _last_frame_hash:
-        return False
-    _last_frame_hash = digest
-    return True
+
+    def __init__(self,
+                 threshold_cpu: float = THRESHOLD_CPU,
+                 threshold_ram: float = THRESHOLD_RAM,
+                 threshold_fs:  float = THRESHOLD_FS) -> None:
+        self.threshold_cpu = threshold_cpu
+        self.threshold_ram = threshold_ram
+        self.threshold_fs  = threshold_fs
+        # Sentinel values ensure the very first frame is always uploaded
+        self._cpu:      float = -999.0
+        self._ram:      float = -999.0
+        self._fs:       float = -999.0
+        self._time_str: str   = ""
+
+    def check(self, m: dict, time_str: str) -> tuple[bool, str]:
+        """
+        Returns (should_upload, human_readable_reason).
+        Reason is empty when no upload is needed.
+        """
+        reasons: list[str] = []
+
+        if abs(m["cpu"]     - self._cpu) >= self.threshold_cpu:
+            reasons.append(f"CPU {self._cpu:.0f}→{m['cpu']:.0f}%")
+        if abs(m["ram_pct"] - self._ram) >= self.threshold_ram:
+            reasons.append(f"RAM {self._ram:.0f}→{m['ram_pct']:.0f}%")
+        if abs(m["fs_pct"]  - self._fs)  >= self.threshold_fs:
+            reasons.append(f"FS {self._fs:.0f}→{m['fs_pct']:.0f}%")
+        if time_str != self._time_str:
+            reasons.append(f"time→{time_str}")
+
+        return bool(reasons), ", ".join(reasons)
+
+    def commit(self, m: dict, time_str: str) -> None:
+        """Record values as of the last successful upload."""
+        self._cpu      = m["cpu"]
+        self._ram      = m["ram_pct"]
+        self._fs       = m["fs_pct"]
+        self._time_str = time_str
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -595,6 +640,11 @@ async def run(args: argparse.Namespace) -> None:
 
     cpu_history: deque = deque(maxlen=50)
     ram_history: deque = deque(maxlen=50)
+    state = FrameState(
+        threshold_cpu=args.threshold_cpu,
+        threshold_ram=args.threshold_ram,
+        threshold_fs=args.threshold_fs,
+    )
 
     # First scrape seeds the CPU delta baseline; reported value will be ~0
     fetch_metrics(args.alloy_url, args.fs)
@@ -607,14 +657,23 @@ async def run(args: argparse.Namespace) -> None:
             await asyncio.sleep(args.interval)
             continue
 
+        # Always collect history — sparkline stays accurate even on skipped cycles
         cpu_history.append(m["cpu"])
         ram_history.append(m["ram_pct"])
 
-        ts = time.strftime("%H:%M:%S")
+        ts       = time.strftime("%H:%M:%S")
+        time_str = time.strftime("%H:%M")   # minute resolution for clock change detection
         print(
             f"[{ts}] CPU={m['cpu']:.1f}%  RAM={m['ram_pct']:.1f}%  "
             f"{m['fs_mount']} free={m['fs_avail']:.1f}G ({m['fs_pct']:.0f}% used)"
         )
+
+        should_upload, reason = state.check(m, time_str)
+
+        if not should_upload:
+            print(f"[{ts}] No significant change — skipping render+upload")
+            await asyncio.sleep(args.interval)
+            continue
 
         try:
             if args.mode == "text":
@@ -628,13 +687,13 @@ async def run(args: argparse.Namespace) -> None:
                     text_mode=1,
                     text_color=(220, 220, 220),
                 )
+                state.commit(m, time_str)
             else:
                 img = render_frame(m, cpu_history, ram_history, args.timezone)
-                if frame_changed(img):
-                    img.save(tmp)
-                    await client.image.upload_image_file(tmp)
-                else:
-                    print(f"[{ts}] Frame unchanged — skipping BLE upload")
+                img.save(tmp)
+                await client.image.upload_image_file(tmp)
+                state.commit(m, time_str)
+                print(f"[{ts}] Uploaded ({reason})")
 
         except Exception as exc:
             print(f"[BLE] Lost connection: {exc} — reconnecting…")
@@ -757,6 +816,22 @@ def main() -> None:
             "LED panel gamma correction (default: 2.2). "
             "Higher values brighten midtones; 1.0 disables correction."
         ),
+    )
+    # ── Upload thresholds ─────────────────────────────────────────────────────
+    p.add_argument(
+        "--threshold-cpu", default=THRESHOLD_CPU, type=float,
+        metavar="PCT",
+        help=f"CPU %% change needed to trigger an upload (default: {THRESHOLD_CPU}).",
+    )
+    p.add_argument(
+        "--threshold-ram", default=THRESHOLD_RAM, type=float,
+        metavar="PCT",
+        help=f"RAM %% change needed to trigger an upload (default: {THRESHOLD_RAM}).",
+    )
+    p.add_argument(
+        "--threshold-fs", default=THRESHOLD_FS, type=float,
+        metavar="PCT",
+        help=f"Filesystem %% change needed to trigger an upload (default: {THRESHOLD_FS}).",
     )
     # ── Render-test mode ──────────────────────────────────────────────────────
     p.add_argument(
