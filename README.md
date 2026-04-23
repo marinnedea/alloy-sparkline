@@ -30,10 +30,11 @@ The bottom panel shows rolling CPU + RAM sparklines across the last 50 samples.
 | **Dual sparklines** | CPU (cyan) and RAM (purple), last 50 samples |
 | **Supersampled sparklines** | Drawn at 4× then downscaled with LANCZOS for smooth curves |
 | **Floyd-Steinberg dithering** | Reduces banding artefacts on the LED panel |
-| **Gamma correction** | Compensates for LED linear response (γ = 2.2) |
-| **Frame deduplication** | Skips BLE upload when pixels are unchanged (SHA-256 diff) |
+| **Gamma correction** | Compensates for LED linear response (γ = 2.2, `--gamma`) |
+| **Threshold-based uploads** | Render + BLE upload only when something meaningfully changes (see below) |
 | **BLE connect-with-retry** | Infinite back-off on scan/connect failure — never crashes |
-| **Auto-reconnect** | Recovers from mid-loop BLE drops without restarting |
+| **BT adapter self-healing** | Auto power-cycles the HCI adapter after stuck errors or 3 consecutive misses |
+| **Auto-reconnect** | Recovers from mid-loop BLE drops; resets frame state so display gets a fresh frame immediately |
 | **Health HTTP server** | `GET :9876/` → `200 OK` for external probes / dashboards |
 | **Scrolling text fallback** | `--mode text` for simple marquee output |
 
@@ -46,12 +47,34 @@ Grafana Alloy bundles a full Prometheus node exporter (`prometheus.exporter.unix
 1. Fetches raw Prometheus exposition format from Alloy on each cycle
 2. Parses `node_cpu_seconds_total`, `node_memory_*`, and `node_filesystem_*` metrics
 3. Computes CPU % as a delta between two consecutive scrapes (same method as `rate()` in PromQL)
-4. Renders a 64×64 PNG using Pillow with colour-coded bars and supersampled sparklines
-5. Applies Floyd-Steinberg dithering and gamma correction to the frame
-6. Skips the BLE upload if the frame is identical to the last one (SHA-256 comparison)
+4. Checks whether any value crossed its upload threshold (see table below) — if not, skips rendering entirely
+5. Renders a 64×64 PNG using Pillow with colour-coded bars and supersampled sparklines
+6. Applies Floyd-Steinberg dithering and gamma correction to the frame
 7. Pushes the image to the display over BLE using the iDotMatrix library
 
 No Prometheus server, no psutil, no additional exporters needed — just Alloy.
+
+### Smart upload — threshold-based rendering
+
+Metrics are scraped every `--interval` seconds regardless, so sparkline history stays accurate. But the expensive parts — `render_frame()` and the BLE upload (~200 BLE packets) — only run when something visually meaningful changed:
+
+| Trigger | Default threshold | CLI flag |
+|---------|-------------------|----------|
+| CPU usage | ≥ 1 % point | `--threshold-cpu` |
+| RAM usage | ≥ 0.5 % points | `--threshold-ram` |
+| Filesystem usage | ≥ 1 % point | `--threshold-fs` |
+| Clock minute rolls over | always | — |
+
+On an idle machine this typically means **one upload per minute** (the clock tick) instead of every 10 seconds — about an 83 % reduction in BLE radio usage. On a busy machine it uploads as frequently as values cross thresholds.
+
+### Bluetooth self-healing
+
+The BLE connect loop detects two failure modes and recovers automatically:
+
+- **Adapter stuck** (`No discovery started`, `org.bluez.Error.*`) — resets the adapter immediately without waiting
+- **3 consecutive "device not found"** — resets the adapter as a precaution (covers dirty state left by a previous crash)
+
+Reset is done via `bluetoothctl power off/on` (requires user in the `bluetooth` group) with a fallback to `hciconfig hci0 down/up`. No manual `systemctl restart bluetooth` needed.
 
 ---
 
@@ -180,14 +203,21 @@ python3 metrics_dashboard.py --alloy-url http://10.0.0.5:12345/api/v0/component/
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--mac` | auto-discover | Bluetooth MAC address of the display |
-| `--interval` | `10` | Refresh interval in seconds |
+| `--interval` | `10` | Metrics scrape interval in seconds |
 | `--fs` | `/` | Filesystem mountpoint to display |
 | `--mode` | `bars` | Display mode: `bars` (graphic) or `text` (scrolling marquee) |
 | `--timezone` | `Europe/Bucharest` | IANA timezone name for the clock |
 | `--alloy-url` | `http://localhost:12345/…` | Alloy component metrics URL |
 | `--brightness` | `80` | Display brightness (0–100) |
+| `--gamma` | `2.2` | LED panel gamma correction (1.0 = linear) |
+| `--threshold-cpu` | `1.0` | CPU % change needed to trigger an upload |
+| `--threshold-ram` | `0.5` | RAM % change needed to trigger an upload |
+| `--threshold-fs` | `1.0` | Filesystem % change needed to trigger an upload |
 | `--health-port` | `9876` | HTTP port for the `/health` probe endpoint |
 | `--no-health-server` | off | Disable the health HTTP server |
+| `--render-test` | off | Render a synthetic frame locally, no BLE/Alloy needed |
+| `--render-out` | `/tmp/idotmatrix_test.png` | Output path for `--render-test` |
+| `--render-scale` | `8` | Upscale factor for `--render-test` preview image |
 
 ---
 
